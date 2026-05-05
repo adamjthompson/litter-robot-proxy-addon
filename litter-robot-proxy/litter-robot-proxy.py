@@ -13,7 +13,13 @@ import select
 import time
 import sys
 
+import re
+
 import paho.mqtt.client as mqtt
+
+def slugify(name):
+    """Convert a friendly name like 'Litter Robot 1' → 'litter_robot_1'"""
+    return re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -53,7 +59,7 @@ STATUS_MAP = {
     "offline": "Offline",
 }
 
-ERROR_STATES = {"CSF", "SCF", "DFS", "SDF", "BR", "P", "OFF", "offline"}
+ERROR_STATES       = {"CSF", "SCF", "DFS", "SDF", "BR", "P", "OFF", "offline"}
 DRAWER_FULL_STATES = {"DF1", "DF2", "DFS"}
 
 # ─── Load options ─────────────────────────────────────────────────────────────
@@ -72,12 +78,6 @@ options = load_options()
 robot_name_map = {}
 for robot in options.get("robots", []):
     robot_name_map[robot["ip"]] = robot["name"]
-
-def get_robot_name(device_id, ip=None):
-    """Return user-configured name for a robot, falling back to device ID."""
-    if ip and ip in robot_name_map:
-        return robot_name_map[ip]
-    return "Litter Robot %s" % device_id[-6:]
 
 # ─── Persistent cycle storage ─────────────────────────────────────────────────
 
@@ -129,8 +129,13 @@ last_status             = {}   # device_id → raw status code
 
 def on_mqtt_connect(client, userdata, flags, rc):
     print("Connected to MQTT broker with result code: %s" % rc)
-    # Subscribe to reset commands for all robots
     client.subscribe("%s/+/reset" % ADDON_ID)
+    # Clean up any stale discovery messages for previously known devices
+    # Small delay to ensure broker connection is fully ready
+    time.sleep(1)
+    for device_id in cycles.keys():
+        name = robot_names.get(device_id)
+        cleanup_old_discovery(device_id, name=name)
 
 def on_mqtt_message(client, userdata, msg):
     """Handle incoming MQTT messages — used for reset button presses."""
@@ -150,12 +155,48 @@ if MQTT_USER:
 mqtt_client.connect_async(MQTT_HOST, MQTT_PORT, 60)
 mqtt_client.loop_start()
 
+# ─── MQTT Discovery cleanup ───────────────────────────────────────────────────
+
+def cleanup_old_discovery(device_id, name=None):
+    """Clear any retained discovery messages for a device ID.
+    Called on startup to remove stale entities before republishing with correct names.
+    Clears both slug-based topics (current format) and raw device_id topics (old format)."""
+    components_suffixes = [
+        ("sensor",        "status"),
+        ("sensor",        "drawer_level"),
+        ("sensor",        "cycle_count"),
+        ("sensor",        "wait_time"),
+        ("binary_sensor", "drawer_full"),
+        ("binary_sensor", "error"),
+        ("binary_sensor", "night_light"),
+        ("binary_sensor", "panel_lock"),
+        ("binary_sensor", "sleep_mode"),
+        ("button",        "reset"),
+    ]
+    # Always clear old raw device_id format topics
+    for component, suffix in components_suffixes:
+        topic = "%s/%s/%s_%s_%s/config" % (
+            DISCOVERY_PREFIX, component, ADDON_ID, device_id, suffix
+        )
+        mqtt_client.publish(topic, "", retain=True)
+    # Also clear slug-based topics if we have a name
+    if name:
+        slug = slugify(name)
+        for component, suffix in components_suffixes:
+            topic = "%s/%s/%s_%s_%s/config" % (
+                DISCOVERY_PREFIX, component, ADDON_ID, slug, suffix
+            )
+            mqtt_client.publish(topic, "", retain=True)
+    print("Cleaned up stale discovery messages for device %s" % device_id)
+
 # ─── MQTT Discovery ───────────────────────────────────────────────────────────
 
 def publish_discovery(device_id, name):
     """Publish MQTT Discovery messages to auto-create HA entities for a robot."""
     if discovery_published.get(device_id):
         return
+
+    slug = slugify(name)
 
     device_info = {
         "identifiers": ["%s_%s" % (ADDON_ID, device_id)],
@@ -170,7 +211,7 @@ def publish_discovery(device_id, name):
         # Status sensor
         {
             "component": "sensor",
-            "object_id": "%s_status" % device_id,
+            "object_id": "%s_%s_status" % (ADDON_ID, slug),
             "config": {
                 "name": "Status",
                 "state_topic": "%s/state" % base_topic,
@@ -183,7 +224,7 @@ def publish_discovery(device_id, name):
         # Drawer level % sensor
         {
             "component": "sensor",
-            "object_id": "%s_drawer_level" % device_id,
+            "object_id": "%s_%s_drawer_level" % (ADDON_ID, slug),
             "config": {
                 "name": "Drawer Level",
                 "state_topic": "%s/state" % base_topic,
@@ -197,7 +238,7 @@ def publish_discovery(device_id, name):
         # Cycle count sensor
         {
             "component": "sensor",
-            "object_id": "%s_cycle_count" % device_id,
+            "object_id": "%s_%s_cycle_count" % (ADDON_ID, slug),
             "config": {
                 "name": "Cycle Count",
                 "state_topic": "%s/state" % base_topic,
@@ -210,7 +251,7 @@ def publish_discovery(device_id, name):
         # Wait time sensor
         {
             "component": "sensor",
-            "object_id": "%s_wait_time" % device_id,
+            "object_id": "%s_%s_wait_time" % (ADDON_ID, slug),
             "config": {
                 "name": "Wait Time",
                 "state_topic": "%s/state" % base_topic,
@@ -224,7 +265,7 @@ def publish_discovery(device_id, name):
         # Drawer full binary sensor
         {
             "component": "binary_sensor",
-            "object_id": "%s_drawer_full" % device_id,
+            "object_id": "%s_%s_drawer_full" % (ADDON_ID, slug),
             "config": {
                 "name": "Drawer Full",
                 "state_topic": "%s/state" % base_topic,
@@ -240,7 +281,7 @@ def publish_discovery(device_id, name):
         # Error binary sensor
         {
             "component": "binary_sensor",
-            "object_id": "%s_error" % device_id,
+            "object_id": "%s_%s_error" % (ADDON_ID, slug),
             "config": {
                 "name": "Error",
                 "state_topic": "%s/state" % base_topic,
@@ -256,7 +297,7 @@ def publish_discovery(device_id, name):
         # Night light binary sensor
         {
             "component": "binary_sensor",
-            "object_id": "%s_night_light" % device_id,
+            "object_id": "%s_%s_night_light" % (ADDON_ID, slug),
             "config": {
                 "name": "Night Light",
                 "state_topic": "%s/state" % base_topic,
@@ -271,7 +312,7 @@ def publish_discovery(device_id, name):
         # Panel lock binary sensor
         {
             "component": "binary_sensor",
-            "object_id": "%s_panel_lock" % device_id,
+            "object_id": "%s_%s_panel_lock" % (ADDON_ID, slug),
             "config": {
                 "name": "Panel Lock",
                 "state_topic": "%s/state" % base_topic,
@@ -286,7 +327,7 @@ def publish_discovery(device_id, name):
         # Sleep mode binary sensor
         {
             "component": "binary_sensor",
-            "object_id": "%s_sleep_mode" % device_id,
+            "object_id": "%s_%s_sleep_mode" % (ADDON_ID, slug),
             "config": {
                 "name": "Sleep Mode",
                 "state_topic": "%s/state" % base_topic,
@@ -301,7 +342,7 @@ def publish_discovery(device_id, name):
         # Reset drawer button
         {
             "component": "button",
-            "object_id": "%s_reset" % device_id,
+            "object_id": "%s_%s_reset" % (ADDON_ID, slug),
             "config": {
                 "name": "Reset Drawer Counter",
                 "command_topic": "%s/%s/reset" % (ADDON_ID, device_id),
@@ -314,16 +355,15 @@ def publish_discovery(device_id, name):
     ]
 
     for entity in entities:
-        topic = "%s/%s/%s_%s/config" % (
+        topic = "%s/%s/%s/config" % (
             DISCOVERY_PREFIX,
             entity["component"],
-            ADDON_ID,
             entity["object_id"]
         )
         mqtt_client.publish(topic, json.dumps(entity["config"]), retain=True)
 
     discovery_published[device_id] = True
-    print("Published MQTT Discovery for %s (%s)" % (name, device_id))
+    print("Published MQTT Discovery for %s (%s) → slug: %s" % (name, device_id, slug))
 
 # ─── State publishing ─────────────────────────────────────────────────────────
 
@@ -393,6 +433,8 @@ def handle_from_robot(raw_data, addr):
         msg = raw_data.strip().decode()
     except:
         print("handle_from_robot: error parsing data from %s" % str(addr))
+        # Always relay upstream even if we can't parse
+        sock_litter.sendto(raw_data, (HOST_SERVER, 2001))
         return
 
     parts = msg.split(",")
@@ -402,8 +444,17 @@ def handle_from_robot(raw_data, addr):
         raw_status = parts[4]
         ip         = addr[0]
 
-        # Determine robot name
-        name = robot_name_map.get(ip, "Litter Robot %s" % device_id[-6:])
+        # Only proceed with discovery if robot IP is configured
+        name = robot_name_map.get(ip)
+        if not name:
+            print("%s WARNING: Robot at %s (device %s) is not configured. "
+                  "Add this IP to the add-on configuration to enable discovery." % (
+                datetime.datetime.now().isoformat(), ip, device_id
+            ))
+            # Still relay traffic so robot stays connected to Whisker
+            sock_litter.sendto(raw_data, (HOST_SERVER, 2001))
+            return
+
         robot_names[device_id] = name
 
         # Log only on first seen or IP change
@@ -446,17 +497,17 @@ def handle_from_robot(raw_data, addr):
         device_id = parts[1]
         ip        = addr[0]
 
-        if device_id not in robot_addresses or robot_addresses[device_id] != addr:
-            name = robot_name_map.get(ip, "Litter Robot %s" % device_id[-6:])
-            print("%s Tracking %s (%s) at %s" % (
-                datetime.datetime.now().isoformat(), name, device_id, ip
-            ))
+        name = robot_name_map.get(ip)
+        if name:
+            if device_id not in robot_addresses or robot_addresses[device_id] != addr:
+                print("%s Tracking %s (%s) at %s" % (
+                    datetime.datetime.now().isoformat(), name, device_id, ip
+                ))
+            robot_addresses[device_id]         = addr
+            robot_last_seen[device_id]         = time.time()
+            robot_offline_published[device_id] = False
 
-        robot_addresses[device_id]         = addr
-        robot_last_seen[device_id]         = time.time()
-        robot_offline_published[device_id] = False
-
-    # Relay upstream unchanged
+    # Always relay upstream unchanged
     sock_litter.sendto(raw_data, (HOST_SERVER, 2001))
 
 def handle_from_server(raw_data, addr):
@@ -501,7 +552,7 @@ if robot_name_map:
     for ip, name in robot_name_map.items():
         print("  %s → %s" % (ip, name))
 else:
-    print("No robots configured — will auto-discover from traffic")
+    print("WARNING: No robots configured. Add robot IPs to the add-on configuration.")
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
