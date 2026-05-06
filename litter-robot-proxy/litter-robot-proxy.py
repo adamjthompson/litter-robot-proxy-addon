@@ -173,10 +173,17 @@ def cleanup_old_discovery(device_id, name=None):
         ("binary_sensor", "sleep_mode"),
         ("button",        "reset"),
     ]
-    # Format 1: very first version — litter_robot_<device_id>_<suffix>
+    # Format 1a: very first version with full device_id — litter_robot_<device_id>_<suffix>
     for component, suffix in components_suffixes:
         topic = "%s/%s/litter_robot_%s_%s/config" % (
             DISCOVERY_PREFIX, component, device_id, suffix
+        )
+        mqtt_client.publish(topic, "", retain=True)
+    # Format 1b: very first version with short (last 6 chars) device_id
+    short_id = device_id[-6:]
+    for component, suffix in components_suffixes:
+        topic = "%s/%s/litter_robot_%s_%s/config" % (
+            DISCOVERY_PREFIX, component, short_id, suffix
         )
         mqtt_client.publish(topic, "", retain=True)
     # Format 2: second version — litter_robot_proxy_<device_id>_<suffix>
