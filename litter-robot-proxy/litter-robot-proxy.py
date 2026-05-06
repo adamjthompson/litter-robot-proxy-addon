@@ -74,6 +74,25 @@ def load_options():
 
 options = load_options()
 
+# ─── Validate required configuration ─────────────────────────────────────────
+
+def validate_options(opts):
+    errors = []
+    if not opts.get("mqtt_user", "").strip():
+        errors.append("mqtt_user is required but not set.")
+    if not opts.get("mqtt_pass", "").strip():
+        errors.append("mqtt_pass is required but not set.")
+    if not opts.get("robots"):
+        errors.append("No robots configured. Add at least one robot IP and name.")
+    if errors:
+        print("ERROR: Add-on configuration is incomplete:")
+        for e in errors:
+            print("  - %s" % e)
+        print("Please update the add-on configuration and restart.")
+        sys.exit(1)
+
+validate_options(options)
+
 # Build IP → robot name map from options
 robot_name_map = {}
 for robot in options.get("robots", []):
