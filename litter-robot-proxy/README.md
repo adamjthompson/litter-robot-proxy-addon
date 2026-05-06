@@ -1,6 +1,6 @@
 # Litter Robot Proxy — Home Assistant Add-On
 
-Local MQTT proxy for **Litter Robot 3 Connect** devices. Intercepts UDP communication between your robots and Whisker's servers, publishing real-time status to Home Assistant via MQTT Discovery — no cloud dependency, no polling, no API credentials required.
+This is a local MQTT proxy for **Litter Robot 3 Connect** devices. It intercepts UDP communication between your robots and Whisker's servers, publishing real-time status to Home Assistant via MQTT Discovery — no cloud dependency, no polling, no API credentials required.
 
 ## How it works
 
@@ -14,7 +14,7 @@ LR3 → (DNS rewrite) → This add-on → Whisker servers (upstream relay)
                      Home Assistant entities
 ```
 
-The robots continue communicating with Whisker normally — the Whisker app keeps working. You simply gain real-time local visibility on top.
+The robots continue communicating with Whisker normally — the Whisker app keeps working. You simply gain real-time local visibility on top. *Note that this does NOT allow for robot **control**, only robot monitoring.*
 
 ## Prerequisites
 
