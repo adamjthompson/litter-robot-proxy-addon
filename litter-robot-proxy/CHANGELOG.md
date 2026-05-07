@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.4
+- Added descriptions in Setup UI
+
 ## 1.0.3
 - Added configurable capacity per robot
 - Added validation to prevent starting without MQTT credentials
