@@ -1,0 +1,13 @@
+configuration:
+  mqtt_host:
+    name: MQTT Host
+  mqtt_port:
+    name: MQTT Port
+  mqtt_user:
+    name: MQTT Username
+  mqtt_pass:
+    name: MQTT Password
+  offline_threshold:
+    name: Offline Threshold
+  robots:
+    name: Robots

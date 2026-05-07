@@ -1,7 +1,8 @@
 name: "Litter Robot Proxy"
 description: "Local MQTT proxy for Litter Robot 3 Connect devices. Intercepts device communication and publishes real-time status to Home Assistant via MQTT Discovery."
-version: "1.0.1"
+version: "1.0.2"
 slug: "litter_robot_proxy"
+image: "ghcr.io/adamjthompson/litter-robot-proxy-{arch}"
 init: false
 arch:
   - aarch64
