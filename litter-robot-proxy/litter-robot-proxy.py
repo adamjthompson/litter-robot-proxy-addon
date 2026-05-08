@@ -59,8 +59,8 @@ STATUS_MAP = {
     "offline": "Offline",
 }
 
-ERROR_STATES       = {"CSF", "SCF", "DFS", "SDF", "BR", "P", "OFF", "offline"}
-DRAWER_FULL_STATES = {"DF1", "DF2", "DFS"}
+ERROR_STATES       = {"CSF", "SCF", "BR", "P", "OFF", "offline"}
+DRAWER_FULL_STATES = {"DFS"}
 
 # ─── Load options ─────────────────────────────────────────────────────────────
 
@@ -306,7 +306,6 @@ def publish_discovery(device_id, name):
                 "value_template": "{{ value_json.drawer_full }}",
                 "payload_on": "True",
                 "payload_off": "False",
-                "device_class": "problem",
                 "icon": "mdi:delete-alert",
                 "device": device_info,
                 "unique_id": "%s_%s_drawer_full" % (ADDON_ID, device_id),
@@ -322,7 +321,6 @@ def publish_discovery(device_id, name):
                 "value_template": "{{ value_json.error }}",
                 "payload_on": "True",
                 "payload_off": "False",
-                "device_class": "problem",
                 "icon": "mdi:alert",
                 "device": device_info,
                 "unique_id": "%s_%s_error" % (ADDON_ID, device_id),
