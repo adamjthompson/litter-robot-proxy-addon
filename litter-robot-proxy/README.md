@@ -70,7 +70,7 @@ The app uses MQTT Discovery to automatically create the following entities in Ho
 
 | Entity | Type | Description |
 |--------|------|-------------|
-| Status | Sensor | Ready / Cleaning / Waiting / Paused / Paused - Cat Interrupted / Complete / Alert - Almost Full / Alert - Nearly Full / Full / Error - Bonnet Removed / Error - Cat Sensor Fault / Offline / Off |
+| Status | Sensor | Ready / Cleaning / Waiting / Complete / Paused / Cat Interrupted / Almost Full / Nearly Full / Full / Bonnet Removed / Cat Sensor Fault / Offline / Off |
 | Drawer Level | Sensor | Estimated fill percentage based on cycle count |
 | Cycle Count | Sensor | Number of cleaning cycles since last reset |
 | Wait Time | Sensor | Configured wait time in minutes |

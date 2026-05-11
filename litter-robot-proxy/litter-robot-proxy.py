@@ -44,23 +44,23 @@ ADDON_ID         = "litter_robot_proxy"
 STATUS_MAP = {
     "CCC": "Complete",
     "CCP": "Cleaning",
-    "CSF": "Error",
-    "SCF": "Error",
-    "CSI": "Paused",
+    "CSF": "Error - Cat Sensor Fault",
+    "SCF": "Error - Cat Sensor Fault",
+    "CSI": "Paused - Cat Interrupted",
     "CST": "Waiting",
-    "DF1": "Alert",
-    "DF2": "Alert",
+    "DF1": "Almost Full",
+    "DF2": "Nearly Full",
     "DFS": "Full",
     "SDF": "Full",
-    "BR":  "Error",
+    "BR":  "Error - Bonnet Removed",
     "P":   "Paused",
     "OFF": "Off",
     "Rdy": "Ready",
     "offline": "Offline",
 }
 
-ERROR_STATES       = {"CSF", "SCF", "DFS", "SDF", "BR", "P", "OFF", "offline"}
-DRAWER_FULL_STATES = {"DF1", "DF2", "DFS"}
+ERROR_STATES       = {"CSF", "SCF", "BR", "P", "OFF", "offline"}
+DRAWER_FULL_STATES = {"DFS"}
 
 # ─── Load options ─────────────────────────────────────────────────────────────
 
@@ -506,11 +506,6 @@ def handle_from_robot(raw_data, addr):
             print("%s Tracking %s (%s) at %s" % (
                 datetime.datetime.now().isoformat(), name, device_id, ip
             ))
-            # Clear placeholder entry for this IP now that we have the real device_id
-            placeholder_id = "pending_%s" % ip.replace(".", "_")
-            robot_last_seen.pop(placeholder_id, None)
-            robot_names.pop(placeholder_id, None)
-            robot_offline_published.pop(placeholder_id, None)
 
         robot_addresses[device_id]         = addr
         robot_last_seen[device_id]         = time.time()
@@ -601,37 +596,17 @@ print("Offline threshold: %ds" % OFFLINE_THRESHOLD)
 if robot_name_map:
     print("Configured robots:")
     for ip, name in robot_name_map.items():
-        print("  %s -> %s" % (ip, name))
-    # Pre-populate last_seen for all configured robots so the watchdog
-    # can flag them offline even if they never connect after startup.
-    # Use current time minus offline threshold so they get flagged after
-    # one watchdog cycle if they don't check in.
-    startup_ts = time.time() - OFFLINE_THRESHOLD
-    for ip, name in robot_name_map.items():
-        placeholder_id = "pending_%s" % ip.replace(".", "_")
-        robot_last_seen[placeholder_id]         = startup_ts
-        robot_names[placeholder_id]             = name
-        robot_offline_published[placeholder_id] = False
-        print("  Monitoring %s (%s) for offline detection from startup" % (name, ip))
+        print("  %s → %s" % (ip, name))
 else:
     print("WARNING: No robots configured. Add robot IPs to the add-on configuration.")
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
 
-WATCHDOG_INTERVAL = 60  # run watchdog every 60 seconds regardless of traffic
-last_watchdog = time.time()
-
 while True:
-    # Use a short timeout so we check the watchdog frequently
-    read, _, _ = select.select([sock_litter, sock_server], [], [], 10)
-
-    # Run watchdog on interval regardless of whether we received traffic
-    now = time.time()
-    if now - last_watchdog >= WATCHDOG_INTERVAL:
-        check_offline()
-        last_watchdog = now
+    read, _, _ = select.select([sock_litter, sock_server], [], [], 60)
 
     if not read:
+        check_offline()
         continue
 
     for r in read:
