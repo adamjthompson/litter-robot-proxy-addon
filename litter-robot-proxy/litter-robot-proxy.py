@@ -506,6 +506,11 @@ def handle_from_robot(raw_data, addr):
             print("%s Tracking %s (%s) at %s" % (
                 datetime.datetime.now().isoformat(), name, device_id, ip
             ))
+            # Clear placeholder entry for this IP now that we have the real device_id
+            placeholder_id = "pending_%s" % ip.replace(".", "_")
+            robot_last_seen.pop(placeholder_id, None)
+            robot_names.pop(placeholder_id, None)
+            robot_offline_published.pop(placeholder_id, None)
 
         robot_addresses[device_id]         = addr
         robot_last_seen[device_id]         = time.time()
@@ -596,7 +601,18 @@ print("Offline threshold: %ds" % OFFLINE_THRESHOLD)
 if robot_name_map:
     print("Configured robots:")
     for ip, name in robot_name_map.items():
-        print("  %s → %s" % (ip, name))
+        print("  %s -> %s" % (ip, name))
+    # Pre-populate last_seen for all configured robots so the watchdog
+    # can flag them offline even if they never connect after startup.
+    # Use current time minus offline threshold so they get flagged after
+    # one watchdog cycle if they don't check in.
+    startup_ts = time.time() - OFFLINE_THRESHOLD
+    for ip, name in robot_name_map.items():
+        placeholder_id = "pending_%s" % ip.replace(".", "_")
+        robot_last_seen[placeholder_id]         = startup_ts
+        robot_names[placeholder_id]             = name
+        robot_offline_published[placeholder_id] = False
+        print("  Monitoring %s (%s) for offline detection from startup" % (name, ip))
 else:
     print("WARNING: No robots configured. Add robot IPs to the add-on configuration.")
 

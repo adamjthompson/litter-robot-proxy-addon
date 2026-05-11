@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.0.9
+- Updated startup routine to check for offline robots
+
 ## 1.0.8
 - Updated watchdog to run every 60 seconds so that offline states are not missed in environments with multiple Litter Robots
 
