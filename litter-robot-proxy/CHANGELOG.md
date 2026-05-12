@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.3
+- Added logic to catch offline robots at startup
+
 ## 1.1.2
 - Updated watchdog to log every time it runs, making it easier to track errors
 

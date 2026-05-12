@@ -521,6 +521,12 @@ def handle_from_robot(raw_data, addr):
         robot_last_seen[device_id]         = time.time()
         robot_offline_published[device_id] = False
 
+        # Persist IP → device_id mapping so startup can publish to correct topic
+        if device_id not in cycles:
+            cycles[device_id] = {"count": 0, "capacity": capacity}
+        cycles[device_id]["ip"] = ip
+        save_cycles(cycles)
+
         parsed = {
             "wait":       parts[5],
             "light":      parts[6],
@@ -610,15 +616,33 @@ if robot_name_map:
     # On startup, immediately publish offline for all configured robots
     # and set up placeholders for watchdog tracking.
     # Robots that are online will reconnect and override this quickly.
+    # We use both a placeholder (for watchdog tracking) and the known device_id
+    # (for MQTT publishing) so HA sensors on the real topic get updated.
+    # Build reverse map: ip → device_id from cycles.json
+    ip_to_device_id = {}
+    for dev_id, data in cycles.items():
+        stored_ip = data.get("ip")
+        if stored_ip:
+            ip_to_device_id[stored_ip] = dev_id
+
     startup_ts = time.time() - OFFLINE_THRESHOLD
     for ip, name in robot_name_map.items():
         placeholder_id = "pending_%s" % ip.replace(".", "_")
         robot_last_seen[placeholder_id]         = startup_ts
         robot_names[placeholder_id]             = name
-        robot_offline_published[placeholder_id] = True  # mark as published so watchdog won't re-publish
+        robot_offline_published[placeholder_id] = True
         print("  Publishing offline for %s (%s) until it checks in" % (name, ip))
-        # Publish offline immediately — robot will override when it connects
-        publish_state(placeholder_id, raw_status="offline", name=name)
+
+        # Use known device_id from cycles.json if available
+        known_device_id = ip_to_device_id.get(ip)
+        if known_device_id:
+            robot_last_seen[known_device_id]         = startup_ts
+            robot_names[known_device_id]             = name
+            robot_offline_published[known_device_id] = True
+            publish_state(known_device_id, raw_status="offline", name=name)
+            print("    → Publishing to real topic for device %s" % known_device_id)
+        else:
+            print("    → No known device_id yet, will update after first connection")
 else:
     print("WARNING: No robots configured. Add robot IPs to the add-on configuration.")
 
