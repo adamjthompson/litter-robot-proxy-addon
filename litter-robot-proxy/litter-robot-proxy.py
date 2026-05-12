@@ -98,6 +98,7 @@ robot_name_map     = {}   # ip → name
 robot_capacity_map = {}   # ip → capacity
 robot_device_map   = {}   # ip → device_id (optional, from config)
 ip_from_device     = {}   # device_id → ip (reverse lookup)
+robot_names        = {}   # device_id → friendly name (initialized here for use during config loading)
 for robot in options.get("robots", []):
     ip   = robot["ip"]
     name = robot["name"]
@@ -151,7 +152,7 @@ def reset_cycle(device_id):
 robot_addresses         = {}   # device_id → (ip, port)
 robot_last_seen         = {}   # device_id → timestamp
 robot_offline_published = {}   # device_id → bool
-robot_names             = {}   # device_id → friendly name
+# robot_names already initialized above during config loading
 discovery_published     = {}   # device_id → bool
 last_status             = {}   # device_id → raw status code
 

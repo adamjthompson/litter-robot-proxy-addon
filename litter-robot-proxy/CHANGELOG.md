@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.5
+- Fixed startup issues after device_ids were added
+
 ## 1.1.4
 - On startup, if device_id is configured, publishes offline directly to the real MQTT topic immediately
 - Placeholder fallback now works for robots without a configured device_id
