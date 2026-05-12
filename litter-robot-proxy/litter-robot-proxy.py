@@ -94,11 +94,20 @@ def validate_options(opts):
 validate_options(options)
 
 # Build IP → robot name/capacity map from options
-robot_name_map = {}      # ip → name
-robot_capacity_map = {}  # ip → capacity
+robot_name_map     = {}   # ip → name
+robot_capacity_map = {}   # ip → capacity
+robot_device_map   = {}   # ip → device_id (optional, from config)
+ip_from_device     = {}   # device_id → ip (reverse lookup)
 for robot in options.get("robots", []):
-    robot_name_map[robot["ip"]] = robot["name"]
-    robot_capacity_map[robot["ip"]] = robot.get("capacity", 30)
+    ip   = robot["ip"]
+    name = robot["name"]
+    robot_name_map[ip]     = name
+    robot_capacity_map[ip] = robot.get("capacity", 30)
+    device_id = robot.get("device_id", "").strip()
+    if device_id:
+        robot_device_map[ip]          = device_id
+        ip_from_device[device_id]     = ip
+        robot_names[device_id]        = name
 
 # ─── Persistent cycle storage ─────────────────────────────────────────────────
 
@@ -451,7 +460,7 @@ def publish_state(device_id, raw_status=None, parsed=None, name=None):
 def check_offline():
     now = time.time()
     checked = []
-    for device_id, last_seen in robot_last_seen.items():
+    for device_id, last_seen in list(robot_last_seen.items()):
         name = robot_names.get(device_id, device_id)
         elapsed = int(now - last_seen)
         if now - last_seen > OFFLINE_THRESHOLD:
@@ -506,26 +515,27 @@ def handle_from_robot(raw_data, addr):
         capacity = robot_capacity_map.get(ip, 30)
         if device_id not in cycles:
             cycles[device_id] = {"count": 0, "capacity": capacity}
-            save_cycles(cycles)
-        elif cycles[device_id].get("capacity", 30) != capacity:
+        cycles[device_id]["ip"] = ip
+        if cycles[device_id].get("capacity", 30) != capacity:
             cycles[device_id]["capacity"] = capacity
-            save_cycles(cycles)
+        save_cycles(cycles)
 
         # Log only on first seen or IP change
         if device_id not in robot_addresses or robot_addresses[device_id] != addr:
             print("%s Tracking %s (%s) at %s" % (
                 datetime.datetime.now().isoformat(), name, device_id, ip
             ))
+            # Clear placeholder entry for this IP now that we have the real device_id
+            placeholder_id = "pending_%s" % ip.replace(".", "_")
+            robot_last_seen.pop(placeholder_id, None)
+            robot_names.pop(placeholder_id, None)
+            robot_offline_published.pop(placeholder_id, None)
+            # Update reverse lookup
+            ip_from_device[device_id] = ip
 
         robot_addresses[device_id]         = addr
         robot_last_seen[device_id]         = time.time()
         robot_offline_published[device_id] = False
-
-        # Persist IP → device_id mapping so startup can publish to correct topic
-        if device_id not in cycles:
-            cycles[device_id] = {"count": 0, "capacity": capacity}
-        cycles[device_id]["ip"] = ip
-        save_cycles(cycles)
 
         parsed = {
             "wait":       parts[5],
@@ -612,37 +622,31 @@ print("Offline threshold: %ds" % OFFLINE_THRESHOLD)
 if robot_name_map:
     print("Configured robots:")
     for ip, name in robot_name_map.items():
-        print("  %s → %s" % (ip, name))
-    # On startup, immediately publish offline for all configured robots
-    # and set up placeholders for watchdog tracking.
-    # Robots that are online will reconnect and override this quickly.
-    # We use both a placeholder (for watchdog tracking) and the known device_id
-    # (for MQTT publishing) so HA sensors on the real topic get updated.
-    # Build reverse map: ip → device_id from cycles.json
-    ip_to_device_id = {}
-    for dev_id, data in cycles.items():
-        stored_ip = data.get("ip")
-        if stored_ip:
-            ip_to_device_id[stored_ip] = dev_id
-
+        device_id = robot_device_map.get(ip)
+        if device_id:
+            print("  %s → %s (device: %s)" % (ip, name, device_id))
+        else:
+            print("  %s → %s (no device_id configured)" % (ip, name))
+    # On startup, publish offline for all configured robots immediately.
+    # Use configured device_id if available so HA sensors get updated correctly.
+    # Robots that are online will reconnect and override within seconds.
     startup_ts = time.time() - OFFLINE_THRESHOLD
     for ip, name in robot_name_map.items():
-        placeholder_id = "pending_%s" % ip.replace(".", "_")
-        robot_last_seen[placeholder_id]         = startup_ts
-        robot_names[placeholder_id]             = name
-        robot_offline_published[placeholder_id] = True
-        print("  Publishing offline for %s (%s) until it checks in" % (name, ip))
-
-        # Use known device_id from cycles.json if available
-        known_device_id = ip_to_device_id.get(ip)
-        if known_device_id:
-            robot_last_seen[known_device_id]         = startup_ts
-            robot_names[known_device_id]             = name
-            robot_offline_published[known_device_id] = True
-            publish_state(known_device_id, raw_status="offline", name=name)
-            print("    → Publishing to real topic for device %s" % known_device_id)
+        device_id = robot_device_map.get(ip)
+        if device_id:
+            # Use real device_id — publishes to correct MQTT topic
+            robot_last_seen[device_id]         = startup_ts
+            robot_names[device_id]             = name
+            robot_offline_published[device_id] = True
+            publish_state(device_id, raw_status="offline", name=name)
+            print("  Publishing offline for %s (%s) → topic: litter_robot/%s/state" % (name, ip, device_id))
         else:
-            print("    → No known device_id yet, will update after first connection")
+            # Fall back to placeholder — robot must connect once to register device_id
+            placeholder_id = "pending_%s" % ip.replace(".", "_")
+            robot_last_seen[placeholder_id]         = startup_ts
+            robot_names[placeholder_id]             = name
+            robot_offline_published[placeholder_id] = True
+            print("  No device_id for %s (%s) — add device_id to config for immediate offline detection" % (name, ip))
 else:
     print("WARNING: No robots configured. Add robot IPs to the add-on configuration.")
 
@@ -652,10 +656,8 @@ WATCHDOG_INTERVAL = 60  # run watchdog every 60 seconds regardless of traffic
 last_watchdog = time.time()
 
 while True:
-    # Use a short timeout so we check the watchdog frequently
     read, _, _ = select.select([sock_litter, sock_server], [], [], 10)
 
-    # Run watchdog on interval regardless of whether we received traffic
     now = time.time()
     if now - last_watchdog >= WATCHDOG_INTERVAL:
         check_offline()
