@@ -1,7 +1,7 @@
 # Changelog
 
 ## 1.1.6
-- Fixed placeholder entity names that wer being passed through to Node-RED notifications
+- Fixed placeholder entity names that were being passed through to Node-RED notifications
 
 ## 1.1.5
 - Fixed startup issues after device_ids were added
