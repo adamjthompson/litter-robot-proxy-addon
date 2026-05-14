@@ -459,18 +459,16 @@ def publish_state(device_id, raw_status=None, parsed=None, name=None):
 # ─── Watchdog ─────────────────────────────────────────────────────────────────
 
 def check_upstream():
-    """Verify upstream server is reachable."""
+    """Verify upstream server is reachable via DNS."""
     try:
         import socket as _socket
-        test_sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-        test_sock.settimeout(5)
-        # Send a dummy packet and see if we get a response
-        # Just resolving the hostname is enough to check DNS
         _socket.getaddrinfo(HOST_SERVER, 2001)
-        test_sock.close()
+        print("%s UPSTREAM: %s reachable" % (
+            datetime.datetime.now().isoformat(), HOST_SERVER
+        ))
         return True
     except Exception as e:
-        print("%s WARNING: Cannot reach upstream server %s: %s" % (
+        print("%s UPSTREAM WARNING: Cannot reach %s: %s" % (
             datetime.datetime.now().isoformat(), HOST_SERVER, str(e)
         ))
         return False
@@ -484,20 +482,25 @@ def check_offline():
         if now - last_seen > OFFLINE_THRESHOLD:
             checked.append("%s (offline %ds)" % (name, elapsed))
             if not robot_offline_published.get(device_id, False):
-                print("%s WATCHDOG: %s (%s) has not reported in %ds - marking offline" % (
-                    datetime.datetime.now().isoformat(),
-                    name,
-                    device_id,
-                    elapsed
-                ))
-                last_status[device_id] = "offline"
-                publish_state(device_id, raw_status="offline", name=name)
+                is_placeholder = device_id.startswith("pending_")
+                if is_placeholder:
+                    print("%s WATCHDOG: %s has not connected since startup — add device_id to config for proper offline detection" % (
+                        datetime.datetime.now().isoformat(), name
+                    ))
+                else:
+                    print("%s WATCHDOG: %s (%s) has not reported in %ds - marking offline" % (
+                        datetime.datetime.now().isoformat(),
+                        name,
+                        device_id,
+                        elapsed
+                    ))
+                    last_status[device_id] = "offline"
+                    publish_state(device_id, raw_status="offline", name=name)
                 robot_offline_published[device_id] = True
         else:
             checked.append("%s (ok, %ds ago)" % (name, elapsed))
     if checked:
         print("%s WATCHDOG: %s" % (datetime.datetime.now().isoformat(), ", ".join(checked)))
-    # Check upstream connectivity
     check_upstream()
 
 # ─── Packet handlers ──────────────────────────────────────────────────────────
