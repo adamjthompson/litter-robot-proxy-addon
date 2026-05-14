@@ -25,4 +25,4 @@ configuration:
         description: "IP address of the robot on the local network. A fixed IP is recommended for reliability."
       capacity:
         name: Capacity
-        description: "Number of cycles before the drawer is considered full. Default is 30 if left blank."
+        description: "Number of cycles before the drawer is considered full. Default is 30 if left blank (or set to 0) and then adjusts automatically based on usage patterns."
